@@ -1,5 +1,5 @@
-from collections.abc import AsyncGenerator
 import json
+from collections.abc import AsyncGenerator
 from typing import Any
 from sqlalchemy.orm import Session
 
@@ -8,17 +8,18 @@ from app.agents.planner import PlannerAgent
 from app.agents.research import ResearchAgent
 from app.agents.data_analyst import DataAnalystAgent
 from app.agents.document import DocumentAgent
+from app.agents.crm import CRMAgent
 from app.agents.writer import WriterAgent
 from app.models.document import Document
+from app.models.user import User
 from app.services.llm_service import stream_reply
 
 
 class SupervisorAgent:
     """
     Supervisor Agent / Orchestrator:
-    - Understands user request intent
-    - Decides routing (Direct Chat vs Specialist Agents)
-    - Coordinates Planner, Research, Data Analyst, Document, and Writer agents
+    - Understands user request intent (Direct Chat vs Specialist Agents vs CRM)
+    - Coordinates Planner, Research, Data Analyst, Document, CRM, and Writer agents
     - Emits live agent telemetry traces over SSE
     """
 
@@ -27,6 +28,7 @@ class SupervisorAgent:
         self.research_agent = ResearchAgent()
         self.data_analyst_agent = DataAnalystAgent()
         self.document_agent = DocumentAgent()
+        self.crm_agent = CRMAgent()
         self.writer_agent = WriterAgent()
 
     def classify_intent(self, query: str, has_documents: bool) -> str:
@@ -37,6 +39,14 @@ class SupervisorAgent:
         if q in greetings:
             return "direct_chat"
 
+        # Explicit CRM keywords & entity queries
+        crm_keywords = [
+            "customer", "customers", "deal", "deals", "pipeline", "lead", "leads",
+            "activity", "activities", "sales rep", "sales reps", "abc ltd", "top 5", "top customer",
+            "closing this month", "open deal", "highest deal"
+        ]
+        has_crm_mention = any(k in q for k in crm_keywords)
+
         # Explicit document keywords
         doc_keywords = ["document", "pdf", "docx", "file", "upload", "report", "attachment", "dataset", "contract"]
         has_doc_mention = any(w in q for w in doc_keywords)
@@ -45,16 +55,20 @@ class SupervisorAgent:
         triggers = 0
         if any(w in q for w in ["search", "web", "find", "latest", "news", "trend", "current", "framework"]):
             triggers += 1
-        if any(w in q for w in ["analyze", "data", "csv", "table", "calculate", "stat", "sum", "average", "metrics"]):
+        if any(w in q for w in ["analyze", "data", "csv", "table", "calculate", "stat", "sum", "average"]):
             triggers += 1
         if has_documents and has_doc_mention:
+            triggers += 1
+        if has_crm_mention:
             triggers += 1
 
         if triggers >= 2:
             return "composite"
+        if has_crm_mention:
+            return "crm_query"
         if has_documents and has_doc_mention:
             return "document_query"
-        if any(w in q for w in ["analyze", "data", "csv", "table", "calculate", "stat", "sum", "average", "metrics"]) and (has_doc_mention or "csv" in q or "data" in q):
+        if any(w in q for w in ["analyze", "data", "csv", "table", "calculate", "stat", "sum", "average", "metrics"]) and (has_doc_mention or "csv" in q or "data" in q or "table" in q):
             return "data_analysis"
         if any(w in q for w in ["search", "web", "find", "latest", "news", "trend", "current", "framework", "compare"]):
             return "research"
@@ -68,6 +82,7 @@ class SupervisorAgent:
         history: list[dict[str, str]],
         document_ids: list[str],
         db: Session,
+        current_user: User = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         # Fetch uploaded documents
         docs = db.query(Document).filter(Document.conversation_id == conversation_id).all()
@@ -103,6 +118,8 @@ class SupervisorAgent:
             "research_results": [],
             "data_results": {},
             "document_chunks": [],
+            "crm_tool": "",
+            "crm_results": {},
             "agent_trace": [],
         }
 
@@ -127,7 +144,12 @@ class SupervisorAgent:
             agent_name = step.get("agent")
             task_desc = step.get("task", "")
 
-            if agent_name == "Document Agent" and has_docs:
+            if agent_name == "CRM Agent":
+                yield {"type": "agent_step", "agent": "CRM Agent", "action": task_desc}
+                crm_out = self.crm_agent.run(state, db, current_user)
+                state.update(crm_out)
+
+            elif agent_name == "Document Agent" and has_docs:
                 yield {"type": "agent_step", "agent": "Document Agent", "action": task_desc}
                 doc_res = self.document_agent.run(state, db)
                 state.update(doc_res)
@@ -146,7 +168,7 @@ class SupervisorAgent:
         yield {
             "type": "agent_step",
             "agent": "Writer Agent",
-            "action": "Synthesizing multi-agent findings into final response...",
+            "action": "Synthesizing multi-agent & CRM findings into grounded response...",
         }
 
         async for delta in self.writer_agent.stream_final_response(state):

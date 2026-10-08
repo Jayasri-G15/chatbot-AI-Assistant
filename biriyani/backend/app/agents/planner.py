@@ -14,8 +14,22 @@ class PlannerAgent:
 
         plan: list[dict[str, Any]] = []
 
-        if intent == "composite":
+        if intent == "crm_query":
+            plan = [
+                {"step": 1, "agent": "CRM Agent", "task": f"Execute controlled CRM tool query for: {query[:60]}"},
+                {"step": 2, "agent": "Writer Agent", "task": "Synthesize grounded CRM answer from database results"},
+            ]
+
+        elif intent == "composite":
             step_idx = 1
+            if any(k in query for k in ["customer", "deal", "pipeline", "lead", "activity", "sales", "abc ltd"]):
+                plan.append({
+                    "step": step_idx,
+                    "agent": "CRM Agent",
+                    "task": "Query CRM database for customer, deal, and sales pipeline data",
+                })
+                step_idx += 1
+
             if has_docs:
                 plan.append({
                     "step": step_idx,
@@ -32,7 +46,7 @@ class PlannerAgent:
                 })
                 step_idx += 1
 
-            if any(k in query for k in ["analyze", "data", "csv", "sum", "stats", "trend", "revenue", "sales", "average"]):
+            if any(k in query for k in ["analyze", "data", "csv", "sum", "stats", "trend", "revenue", "average"]):
                 plan.append({
                     "step": step_idx,
                     "agent": "Data Analyst Agent",

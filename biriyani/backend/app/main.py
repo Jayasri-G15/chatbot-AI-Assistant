@@ -4,17 +4,22 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import conversations, documents, messages
+from app.api import conversations, documents, messages, auth, customers, deals, activities, leads
 from app.core.config import settings
 from app.core.database import Base, engine
 import app.models  # Ensure all models are registered for Base.metadata.create_all
+from app.database.seed import seed_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
 
 Base.metadata.create_all(bind=engine)
+try:
+    seed_db()
+except Exception as e:
+    logger.warning(f"Seed DB check: {e}")
 
-app = FastAPI(title="Chat API", version="1.0.0")
+app = FastAPI(title="AI CRM Assistant API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,7 +65,11 @@ def ready():
         return JSONResponse(status_code=503, content={"status": "not_ready", "database": "unavailable"})
 
 
+app.include_router(auth.router)
 app.include_router(conversations.router)
 app.include_router(messages.router)
 app.include_router(documents.router)
-
+app.include_router(customers.router)
+app.include_router(deals.router)
+app.include_router(activities.router)
+app.include_router(leads.router)

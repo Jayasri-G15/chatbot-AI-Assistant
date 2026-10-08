@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ChatWindow } from './components/ChatWindow'
+import { CRMView } from './components/crm/CRMView'
 import { SettingsModal } from './components/SettingsModal'
 import { useTheme } from './hooks/useTheme'
 import {
@@ -17,6 +18,7 @@ export default function App() {
   const deleteConversation = useDeleteConversation()
   const renameConversation = useRenameConversation()
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [activeView, setActiveView] = useState<'chat' | 'crm'>('chat')
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
@@ -29,6 +31,7 @@ export default function App() {
   const handleNew = async () => {
     const created = await createConversation.mutateAsync()
     setActiveId(created.id)
+    setActiveView('chat')
     setIsDrawerOpen(false)
   }
 
@@ -39,6 +42,7 @@ export default function App() {
 
   const handleSelect = (id: string) => {
     setActiveId(id)
+    setActiveView('chat')
     setIsDrawerOpen(false)
   }
 
@@ -48,12 +52,14 @@ export default function App() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsDrawerOpen(true)}
-            aria-label="Open conversations"
+            aria-label="Open menu"
             className="btn-press rounded-lg p-1.5 text-lg text-[var(--color-ink)] hover:bg-[var(--color-canvas-parchment)]"
           >
             ☰
           </button>
-          <span className="font-semibold text-sm text-[var(--color-ink)]">Biriyani AI</span>
+          <span className="font-semibold text-sm text-[var(--color-ink)]">
+            Biriyani AI {activeView === 'crm' ? '• CRM Dashboard' : ''}
+          </span>
         </div>
         <button
           onClick={() => setIsSettingsOpen(true)}
@@ -68,12 +74,14 @@ export default function App() {
         <Sidebar
           conversations={conversations}
           activeId={activeId}
+          activeView={activeView}
           isLoading={isLoading}
           isError={isError}
           onSelect={handleSelect}
           onNew={handleNew}
           onDelete={handleDelete}
           onRename={(id, title) => renameConversation.mutate({ id, title })}
+          onNavigateView={(view) => setActiveView(view)}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />
       </div>
@@ -85,12 +93,17 @@ export default function App() {
             <Sidebar
               conversations={conversations}
               activeId={activeId}
+              activeView={activeView}
               isLoading={isLoading}
               isError={isError}
               onSelect={handleSelect}
               onNew={handleNew}
               onDelete={handleDelete}
               onRename={(id, title) => renameConversation.mutate({ id, title })}
+              onNavigateView={(view) => {
+                setActiveView(view)
+                setIsDrawerOpen(false)
+              }}
               onOpenSettings={() => {
                 setIsDrawerOpen(false)
                 setIsSettingsOpen(true)
@@ -100,8 +113,12 @@ export default function App() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1">
-        <ChatWindow conversationId={activeId} />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {activeView === 'chat' ? (
+          <ChatWindow conversationId={activeId} />
+        ) : (
+          <CRMView />
+        )}
       </div>
 
       <SettingsModal

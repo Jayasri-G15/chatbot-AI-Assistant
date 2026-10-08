@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -7,14 +8,27 @@ from app.services.llm_service import stream_reply, LLMServiceError
 
 class WriterAgent:
     """
-    Writer Agent: Synthesizes findings from Research, Data Analyst, and Document agents into
-    a polished, customer-ready final response formatted in markdown with bold headers and citations.
+    Writer Agent: Synthesizes findings from Research, Data Analyst, Document, and CRM agents into
+    a polished, customer-ready final response formatted in markdown with bold headers, tables, and citations.
     """
 
     def prepare_synthesized_prompt(self, state: AgentState) -> str:
         sections = []
 
-        # 1. Research findings
+        # 1. CRM Database Results (Highest Grounding Priority)
+        crm_res = state.get("crm_results", {})
+        crm_tool = state.get("crm_tool", "")
+        if crm_res:
+            crm_text = f"### Grounded CRM Database Results (Tool: `{crm_tool}`):\n"
+            crm_text += json.dumps(crm_res, indent=2, default=str)
+            crm_text += "\n\nCRITICAL GROUNDING RULES FOR CRM:\n"
+            crm_text += "- You MUST strictly rely ONLY on the above CRM Database JSON results.\n"
+            crm_text += "- NEVER invent customer names, deal values, deal titles, or activity notes not present in the JSON.\n"
+            crm_text += "- If the result list is empty, state clearly that no matching records were found in the CRM database.\n"
+            crm_text += "- Format monetary values cleanly (e.g. ₹12,00,000 or $1,200,000) and present lists in clean Markdown tables.\n"
+            sections.append(crm_text)
+
+        # 2. Research findings
         research = state.get("research_results", [])
         if research:
             research_text = "### Web Research Findings:\n"
@@ -22,7 +36,7 @@ class WriterAgent:
                 research_text += f"- **{item.get('title')}** ({item.get('url')})\n  {item.get('summary')}\n"
             sections.append(research_text)
 
-        # 2. Data Analyst findings
+        # 3. Data Analyst findings
         data_res = state.get("data_results", {})
         if data_res and data_res.get("summary"):
             data_text = f"### Data Analyst Insights:\n{data_res.get('summary')}\n"
@@ -30,7 +44,7 @@ class WriterAgent:
                 data_text += f"Metrics: {data_res.get('metrics')}\n"
             sections.append(data_text)
 
-        # 3. Document RAG chunks
+        # 4. Document RAG chunks
         chunks = state.get("document_chunks", [])
         if chunks:
             doc_text = "### Relevant Uploaded Document Chunks:\n"
@@ -55,10 +69,10 @@ class WriterAgent:
                 f"{user_query}\n\n"
                 f"[AGENT WORKFLOW CONTEXT & FINDINGS]:\n{synthesized_context}\n\n"
                 f"Instructions for Writer Agent:\n"
-                f"1. Explain the answer in simple, crystal-clear language that anyone—even a complete beginner with no technical knowledge—can easily understand.\n"
-                f"2. Use helpful real-world analogies, clean bullet points, and bold section headers (**Header**).\n"
-                f"3. Avoid robotic meta-phrases like 'Based on the agent workflow context' or dense technical jargon.\n"
-                f"4. If document context is provided, only include facts that directly help answer the user's question, and cite sources naturally."
+                f"1. Explain the answer in simple, crystal-clear language that anyone can easily understand.\n"
+                f"2. Use helpful formatting like Markdown tables, clean bullet points, and bold section headers (**Header**).\n"
+                f"3. Avoid robotic meta-phrases like 'Based on the agent workflow context' or 'The tool returned'.\n"
+                f"4. If CRM database data is present, present exact numbers and titles from the CRM context."
             )
             if writer_history and writer_history[-1]["role"] == "user":
                 writer_history[-1] = {"role": "user", "content": augmented_query}
