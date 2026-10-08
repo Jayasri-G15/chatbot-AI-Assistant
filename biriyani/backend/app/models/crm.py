@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime
 from sqlalchemy import String, Text, Float, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,7 +14,7 @@ class Customer(Base):
     email: Mapped[str] = mapped_column(String(255), index=True)
     phone: Mapped[str] = mapped_column(String(50), default="")
     company: Mapped[str] = mapped_column(String(255), index=True)
-    owner_id: Mapped[Optional[str]] = mapped_column(
+    owner_id = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -52,7 +51,7 @@ class Lead(Base):
     company: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(50), default="new", index=True)  # new | contacted | qualified | unqualified | converted
     source: Mapped[str] = mapped_column(String(50), default="website")  # website | referral | event | outreach | cold_call
-    owner_id: Mapped[Optional[str]] = mapped_column(
+    owner_id = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -71,8 +70,8 @@ class Deal(Base):
     title: Mapped[str] = mapped_column(String(255))
     value: Mapped[float] = mapped_column(Float, default=0.0, index=True)
     status: Mapped[str] = mapped_column(String(50), default="open", index=True)  # open | won | lost
-    close_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    owner_id: Mapped[Optional[str]] = mapped_column(
+    close_date = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    owner_id = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -93,7 +92,7 @@ class Activity(Base):
     subject: Mapped[str] = mapped_column(String(255))
     activity_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     notes: Mapped[str] = mapped_column(Text, default="")
-    owner_id: Mapped[Optional[str]] = mapped_column(
+    owner_id = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
