@@ -1,3 +1,4 @@
+import bcrypt
 import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Any
@@ -11,19 +12,30 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 
-SECRET_KEY = getattr(settings, "jwt_secret_key", "crm_super_secret_jwt_key_2026")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+SECRET_KEY = settings.jwt_secret_key
+ALGORITHM = settings.jwt_algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 
 security = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    pwd_bytes = password.encode("utf-8")
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return hash_password(plain_password) == hashed_password
+    if not plain_password or not hashed_password:
+        return False
+    if hashed_password.startswith("$2a$") or hashed_password.startswith("$2b$") or hashed_password.startswith("$2y$"):
+        try:
+            return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+        except Exception:
+            return False
+    # Legacy SHA256 fallback for backwards compatibility during migration
+    sha_hash = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
+    return sha_hash == hashed_password
 
 
 def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
@@ -50,23 +62,17 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     if not auth or not auth.credentials:
-        # Fallback default admin/sales user so existing open endpoints don't crash
-        user = db.query(User).filter_by(email="admin@crm.com").first()
-        if not user:
-            user = db.query(User).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required.",
-            )
-        return user
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": {"code": "UNAUTHORIZED", "message": "Authentication required."}},
+        )
 
     token = auth.credentials
     payload = decode_access_token(token)
     if not payload or "sub" not in payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token.",
+            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid or expired token."}},
         )
 
     user_id = payload["sub"]
@@ -74,34 +80,24 @@ def get_current_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found.",
+            detail={"error": {"code": "USER_NOT_FOUND", "message": "User not found."}},
+        )
+    if user.account_status and user.account_status.upper() == "DEACTIVATED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": {"code": "ACCOUNT_DEACTIVATED", "message": "Account has been deactivated."}},
         )
     return user
 
 
-def get_current_user_strict(
-    auth: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: Session = Depends(get_db),
+def require_admin_user(
+    current_user: User = Depends(get_current_user),
 ) -> User:
-    """Strict variant that requires valid auth token for protected CRM REST APIs"""
-    if not auth or not auth.credentials:
+    """Enforce strict server-side RBAC for Admin-only APIs"""
+    if current_user.role.upper() != "ADMIN":
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication token required.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": {"code": "FORBIDDEN", "message": "Admin privileges required."}},
         )
-    token = auth.credentials
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired authentication token.",
-        )
+    return current_user
 
-    user_id = payload["sub"]
-    user = db.query(User).filter_by(id=user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authenticated user account not found.",
-        )
-    return user

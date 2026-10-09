@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Conversation } from '../types/chat'
+import { useAuth } from '../hooks/useAuth'
 
 interface Props {
   conversations: Conversation[]
@@ -13,6 +14,7 @@ interface Props {
   onRename: (id: string, title: string) => void
   onNavigateView: (view: 'chat' | 'crm') => void
   onOpenSettings: () => void
+  onOpenAuth: () => void
 }
 
 export function Sidebar({
@@ -27,7 +29,9 @@ export function Sidebar({
   onRename,
   onNavigateView,
   onOpenSettings,
+  onOpenAuth,
 }: Props) {
+  const { user } = useAuth()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
 
@@ -43,6 +47,8 @@ export function Sidebar({
     setEditingId(null)
   }
 
+  const isAdmin = user?.role === 'ADMIN'
+
   return (
     <aside className="flex h-full w-full flex-col justify-between border-r border-[var(--color-hairline)] bg-[var(--color-canvas)] p-4 sm:w-72">
       <div className="flex flex-col gap-4 min-h-0 flex-1">
@@ -53,10 +59,10 @@ export function Sidebar({
           </div>
           <div>
             <span className="text-lg font-semibold tracking-tight text-[var(--color-ink)] block leading-tight">
-              Biriyani AI
+              AI Assistant
             </span>
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              CRM Assistant
+              {isAdmin ? 'Admin CRM & AI' : 'AI Assistant'}
             </span>
           </div>
         </div>
@@ -73,16 +79,20 @@ export function Sidebar({
           >
             <span>💬</span> AI Assistant Chat
           </button>
-          <button
-            onClick={() => onNavigateView('crm')}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition ${
-              activeView === 'crm'
-                ? 'bg-[var(--color-canvas)] text-[var(--color-primary)] shadow-xs'
-                : 'text-[var(--color-ink-muted-80)] hover:text-[var(--color-ink)]'
-            }`}
-          >
-            <span>📊</span> CRM Dashboard
-          </button>
+          
+          {/* Hide CRM Dashboard navigation for non-admin users */}
+          {isAdmin && (
+            <button
+              onClick={() => onNavigateView('crm')}
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition ${
+                activeView === 'crm'
+                  ? 'bg-[var(--color-canvas)] text-[var(--color-primary)] shadow-xs'
+                  : 'text-[var(--color-ink-muted-80)] hover:text-[var(--color-ink)]'
+              }`}
+            >
+              <span>📊</span> CRM Dashboard
+            </button>
+          )}
         </div>
 
         {/* 3. New Chat Button */}
@@ -165,24 +175,32 @@ export function Sidebar({
         )}
       </div>
 
-      {/* 5. User Profile Footer */}
-      <div className="pt-3 border-t border-[var(--color-hairline)] mt-2">
-        <div className="flex items-center justify-between rounded-xl p-2 hover:bg-[var(--color-canvas-parchment)] transition">
+      {/* 5. User Profile & Account Switcher Footer */}
+      <div className="pt-3 border-t border-[var(--color-hairline)] mt-2 space-y-2">
+        <div
+          onClick={onOpenAuth}
+          className="flex cursor-pointer items-center justify-between rounded-xl p-2 hover:bg-[var(--color-canvas-parchment)] transition"
+        >
           <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-sm font-semibold">
-              A
+            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white text-sm font-semibold ${
+              isAdmin ? 'bg-amber-600' : 'bg-blue-600'
+            }`}>
+              {user?.name?.[0]?.toUpperCase() || 'U'}
             </div>
             <div className="truncate">
               <span className="block text-sm font-medium text-[var(--color-ink)] truncate">
-                Admin User
+                {user?.name || 'User'}
               </span>
               <span className="block text-[11px] text-[var(--color-ink-muted-48)] truncate">
-                admin@crm.com (Admin)
+                {user?.email || 'Guest'} ({user?.role || 'USER'})
               </span>
             </div>
           </div>
           <button
-            onClick={onOpenSettings}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenSettings()
+            }}
             className="rounded-lg p-1.5 text-[var(--color-ink-muted-48)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--color-ink)] transition"
             title="Settings"
             aria-label="Settings"

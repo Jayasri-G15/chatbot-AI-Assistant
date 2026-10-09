@@ -15,12 +15,16 @@ from app.models.user import User
 from app.services.llm_service import stream_reply
 
 
+MAX_AGENT_STEPS = 5
+
+
 class SupervisorAgent:
     """
     Supervisor Agent / Orchestrator:
-    - Understands user request intent (Direct Chat vs Specialist Agents vs CRM)
-    - Coordinates Planner, Research, Data Analyst, Document, CRM, and Writer agents
-    - Emits live agent telemetry traces over SSE
+    - Decides when to route to Direct Chat vs Tool Execution
+    - Executes tools via central ToolRegistry with server-side authorization
+    - Binds execution steps to MAX_AGENT_STEPS (5) and detects repeated tool call loops
+    - Synthesizes findings using WriterAgent
     """
 
     def __init__(self):
@@ -43,7 +47,7 @@ class SupervisorAgent:
         crm_keywords = [
             "customer", "customers", "deal", "deals", "pipeline", "lead", "leads",
             "activity", "activities", "sales rep", "sales reps", "abc ltd", "top 5", "top customer",
-            "closing this month", "open deal", "highest deal"
+            "closing this month", "open deal", "highest deal", "profile", "subscription", "usage"
         ]
         has_crm_mention = any(k in q for k in crm_keywords)
 
@@ -84,6 +88,8 @@ class SupervisorAgent:
         db: Session,
         current_user: User = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
+        from app.tools.registry import tool_registry
+
         # Fetch uploaded documents
         docs = db.query(Document).filter(Document.conversation_id == conversation_id).all()
         has_docs = len(docs) > 0
@@ -94,20 +100,23 @@ class SupervisorAgent:
         if intent == "direct_chat":
             yield {"type": "agent_step", "agent": "Supervisor", "action": "Direct Chat mode active"}
             
-            # Only pass document context if query asks about documents
+            # Use RAG retriever if documents exist and query references documents
             document_texts = None
-            doc_keywords = ["document", "pdf", "docx", "file", "upload", "report", "attachment", "dataset", "contract"]
+            doc_keywords = ["document", "pdf", "docx", "file", "upload", "report", "attachment", "dataset", "contract", "summary", "summarize", "find", "what", "according"]
             if has_docs and any(k in user_query.lower() for k in doc_keywords):
-                document_texts = [
-                    f"--- Document: {doc.filename} ---\n{doc.extracted_text}"
-                    for doc in docs if doc.extracted_text
-                ]
+                from app.tools.rag_retriever import retrieve_document_chunks
+                chunks = retrieve_document_chunks(user_query, docs)
+                if chunks:
+                    document_texts = [
+                        f"[Source: {c['filename']}, Chunk {c['chunk_index']}/{c['total_chunks']}]\n{c['text']}"
+                        for c in chunks
+                    ]
             
             async for delta in stream_reply(history, documents_context=document_texts):
                 yield {"type": "delta", "content": delta}
             return
 
-        # 2. Multi-Agent Orchestration Route
+        # 2. Multi-Agent & Tool Orchestration Route
         state: AgentState = {
             "conversation_id": conversation_id,
             "user_query": user_query,
@@ -123,11 +132,10 @@ class SupervisorAgent:
             "agent_trace": [],
         }
 
-        # Step A: Supervisor Intent Classification
         yield {
             "type": "agent_step",
             "agent": "Supervisor Agent",
-            "action": f"Classified intent: '{intent.upper()}'. Planning agent workflow...",
+            "action": f"Classified intent: '{intent.upper()}'. Formulating tool plan...",
         }
 
         # Step B: Planner Agent
@@ -136,31 +144,50 @@ class SupervisorAgent:
         yield {
             "type": "agent_step",
             "agent": "Planner Agent",
-            "action": f"Formulated {len(plan)}-step plan across specialist agents",
+            "action": f"Formulated {len(plan)}-step plan across specialist tools",
         }
 
-        # Step C: Sequential Execution of Planned Worker Agents
+        # Step C: Sequential Bounded Execution of Tools
+        executed_signatures = set()
+        step_count = 0
+
         for step in plan:
+            if step_count >= MAX_AGENT_STEPS:
+                yield {
+                    "type": "agent_step",
+                    "agent": "Supervisor Agent",
+                    "action": f"Reached maximum allowed agent step limit ({MAX_AGENT_STEPS}). Concluding loop.",
+                }
+                break
+
             agent_name = step.get("agent")
             task_desc = step.get("task", "")
 
+            # Prevent loop on identical repeated steps
+            sig = f"{agent_name}:{task_desc}"
+            if sig in executed_signatures:
+                continue
+            executed_signatures.add(sig)
+
+            step_count += 1
+
             if agent_name == "CRM Agent":
-                yield {"type": "agent_step", "agent": "CRM Agent", "action": task_desc}
+                yield {"type": "agent_step", "agent": "CRM Tool", "action": task_desc}
                 crm_out = self.crm_agent.run(state, db, current_user)
                 state.update(crm_out)
 
             elif agent_name == "Document Agent" and has_docs:
-                yield {"type": "agent_step", "agent": "Document Agent", "action": task_desc}
+                yield {"type": "agent_step", "agent": "RAG Tool", "action": task_desc}
                 doc_res = self.document_agent.run(state, db)
                 state.update(doc_res)
 
             elif agent_name == "Research Agent":
-                yield {"type": "agent_step", "agent": "Research Agent", "action": task_desc}
+                yield {"type": "agent_step", "agent": "Web Tool", "action": task_desc}
                 res_out = self.research_agent.run(state)
                 state.update(res_out)
 
             elif agent_name == "Data Analyst Agent":
-                yield {"type": "agent_step", "agent": "Data Analyst Agent", "action": task_desc}
+                yield {"type": "agent_step", "agent": "Data Sandbox Tool", "action": task_desc}
                 data_out = self.data_analyst_agent.run(state)
                 state.update(data_out)
 
@@ -168,8 +195,9 @@ class SupervisorAgent:
         yield {
             "type": "agent_step",
             "agent": "Writer Agent",
-            "action": "Synthesizing multi-agent & CRM findings into grounded response...",
+            "action": "Synthesizing tool findings into grounded response...",
         }
 
         async for delta in self.writer_agent.stream_final_response(state):
             yield {"type": "delta", "content": delta}
+

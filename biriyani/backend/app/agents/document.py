@@ -28,7 +28,7 @@ class DocumentAgent:
             .all()
         )
 
-        chunks = retrieve_document_chunks(query, docs, top_k=4)
+        chunks = retrieve_document_chunks(query, docs)
 
         trace.append({
             "agent": "Document Agent",

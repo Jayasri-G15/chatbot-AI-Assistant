@@ -11,11 +11,24 @@ def make_title(first_message: str) -> str:
     return title[:60] + ("…" if len(title) > 60 else "")
 
 
-def create_conversation(db: Session) -> Conversation:
-    conversation = Conversation()
+def create_conversation(db: Session, user_id: str | None = None) -> Conversation:
+    conversation = Conversation(user_id=user_id) if user_id else Conversation()
     db.add(conversation)
     db.commit()
     db.refresh(conversation)
+
+    if conversation.user_id:
+        from app.services.event_service import ApplicationEventService
+        ApplicationEventService.record_event(
+            db,
+            event_type="CONVERSATION_CREATED",
+            user_id=conversation.user_id,
+            entity_type="conversation",
+            entity_id=conversation.id,
+            event_id=f"conv-create-{conversation.id}",
+        )
+        db.commit()
+
     return conversation
 
 
@@ -63,6 +76,20 @@ def add_message(
     db.commit()
     db.refresh(message)
     db.refresh(conversation)
+
+    if role == "user" and conversation.user_id:
+        from app.services.event_service import ApplicationEventService
+        ApplicationEventService.record_event(
+            db,
+            event_type="CHAT_MESSAGE_SENT",
+            user_id=conversation.user_id,
+            entity_type="conversation",
+            entity_id=conversation.id,
+            metadata={"message_id": message.id, "length": len(content)},
+            event_id=f"msg-sent-{message.id}",
+        )
+        db.commit()
+
     return message
 
 

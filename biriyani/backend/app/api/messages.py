@@ -17,9 +17,9 @@ from app.services.rate_limit_service import RateLimitExceeded, check_rate_limit
 router = APIRouter(tags=["messages"])
 
 
-def _get_conversation_or_404(db: Session, conversation_id: str):
+def _get_conversation_or_404(db: Session, conversation_id: str, current_user: User):
     conversation = conversation_service.get_conversation(db, conversation_id)
-    if conversation is None:
+    if conversation is None or conversation.user_id != current_user.id:
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "CONVERSATION_NOT_FOUND", "message": "Conversation not found"}},
@@ -28,8 +28,12 @@ def _get_conversation_or_404(db: Session, conversation_id: str):
 
 
 @router.get("/api/v1/conversations/{conversation_id}/messages", response_model=list[MessageOut])
-def list_messages(conversation_id: str, db: Session = Depends(get_db)):
-    conversation = _get_conversation_or_404(db, conversation_id)
+def list_messages(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    conversation = _get_conversation_or_404(db, conversation_id, current_user)
     return conversation.messages
 
 
@@ -60,7 +64,7 @@ async def send_message(
             },
         )
 
-    conversation = _get_conversation_or_404(db, conversation_id)
+    conversation = _get_conversation_or_404(db, conversation_id, current_user)
     conversation_service.add_message(db, conversation, "user", payload.content, document_ids=payload.document_ids)
 
     content = payload.content
@@ -69,6 +73,10 @@ async def send_message(
         stream_db = SessionLocal()
         try:
             stream_conversation = conversation_service.get_conversation(stream_db, conversation_id)
+            if not stream_conversation or stream_conversation.user_id != current_user.id:
+                yield _sse({"type": "error", "message": "Conversation not found or access denied."})
+                return
+
 
             if check_input(content):
                 conversation_service.add_message(stream_db, stream_conversation, "assistant", REFUSAL_MESSAGE)

@@ -3,7 +3,9 @@ import { Sidebar } from './components/Sidebar'
 import { ChatWindow } from './components/ChatWindow'
 import { CRMView } from './components/crm/CRMView'
 import { SettingsModal } from './components/SettingsModal'
+import { AuthView } from './components/AuthView'
 import { useTheme } from './hooks/useTheme'
+import { useAuth } from './hooks/useAuth'
 import {
   useConversations,
   useCreateConversation,
@@ -13,7 +15,8 @@ import {
 
 export default function App() {
   const { theme, setTheme } = useTheme()
-  const { data: conversations = [], isLoading, isError } = useConversations()
+  const { user, isLoading: isAuthLoading } = useAuth()
+  const { data: conversations = [], isLoading: isConvLoading, isError } = useConversations()
   const createConversation = useCreateConversation()
   const deleteConversation = useDeleteConversation()
   const renameConversation = useRenameConversation()
@@ -21,6 +24,13 @@ export default function App() {
   const [activeView, setActiveView] = useState<'chat' | 'crm'>('chat')
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+
+  // Ensure non-admin users cannot stay on CRM view
+  useEffect(() => {
+    if (user && user.role !== 'ADMIN' && activeView === 'crm') {
+      setActiveView('chat')
+    }
+  }, [user, activeView])
 
   useEffect(() => {
     if (!activeId && conversations.length > 0) {
@@ -46,6 +56,20 @@ export default function App() {
     setIsDrawerOpen(false)
   }
 
+  // Loading state
+  if (isAuthLoading) {
+    return (
+      <div className="flex h-dvh w-screen items-center justify-center bg-[var(--color-canvas-parchment)] text-sm text-[var(--color-ink-muted-48)] font-medium">
+        Initializing AI Assistant…
+      </div>
+    )
+  }
+
+  // Unauthenticated flow: Render opaque standalone AuthView (no chatbot leak behind!)
+  if (!user) {
+    return <AuthView initialMode="login" />
+  }
+
   return (
     <div className="flex h-dvh w-screen flex-col overflow-hidden bg-[var(--color-canvas-parchment)] md:flex-row text-[var(--color-ink)] transition-colors">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--color-hairline)] bg-[var(--color-canvas)] px-4 md:hidden">
@@ -58,16 +82,24 @@ export default function App() {
             ☰
           </button>
           <span className="font-semibold text-sm text-[var(--color-ink)]">
-            Biriyani AI {activeView === 'crm' ? '• CRM Dashboard' : ''}
+            AI Assistant {activeView === 'crm' ? '• CRM Dashboard' : ''}
           </span>
         </div>
-        <button
-          onClick={() => setIsSettingsOpen(true)}
-          aria-label="Settings"
-          className="rounded-lg p-1.5 text-lg text-[var(--color-ink-muted-48)] hover:text-[var(--color-ink)]"
-        >
-          ⚙️
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[var(--color-canvas-parchment)] border border-[var(--color-hairline)] text-[var(--color-ink)]"
+          >
+            {user.name}
+          </button>
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            aria-label="Settings"
+            className="rounded-lg p-1.5 text-lg text-[var(--color-ink-muted-48)] hover:text-[var(--color-ink)]"
+          >
+            ⚙️
+          </button>
+        </div>
       </header>
 
       <div className="hidden h-full shrink-0 md:block">
@@ -75,7 +107,7 @@ export default function App() {
           conversations={conversations}
           activeId={activeId}
           activeView={activeView}
-          isLoading={isLoading}
+          isLoading={isConvLoading}
           isError={isError}
           onSelect={handleSelect}
           onNew={handleNew}
@@ -83,6 +115,7 @@ export default function App() {
           onRename={(id, title) => renameConversation.mutate({ id, title })}
           onNavigateView={(view) => setActiveView(view)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenAuth={() => setIsSettingsOpen(true)}
         />
       </div>
 
@@ -94,7 +127,7 @@ export default function App() {
               conversations={conversations}
               activeId={activeId}
               activeView={activeView}
-              isLoading={isLoading}
+              isLoading={isConvLoading}
               isError={isError}
               onSelect={handleSelect}
               onNew={handleNew}
@@ -108,13 +141,17 @@ export default function App() {
                 setIsDrawerOpen(false)
                 setIsSettingsOpen(true)
               }}
+              onOpenAuth={() => {
+                setIsDrawerOpen(false)
+                setIsSettingsOpen(true)
+              }}
             />
           </div>
         </div>
       )}
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {activeView === 'chat' ? (
+        {activeView === 'chat' || user.role !== 'ADMIN' ? (
           <ChatWindow conversationId={activeId} />
         ) : (
           <CRMView />

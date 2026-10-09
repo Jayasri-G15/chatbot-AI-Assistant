@@ -99,4 +99,4 @@ class Activity(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     customer = relationship("Customer", back_populates="activities")
-    owner = relationship("User", back_populates="activities")
+    owner = relationship("User", back_populates="legacy_activities")

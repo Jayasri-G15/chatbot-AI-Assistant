@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import conversations, documents, messages, auth, customers, deals, activities, leads
+from app.api import conversations, documents, messages, auth, customers, deals, activities, leads, admin
 from app.core.config import settings
 from app.core.database import Base, engine
 import app.models  # Ensure all models are registered for Base.metadata.create_all
@@ -28,6 +28,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 @app.exception_handler(HTTPException)
@@ -56,16 +65,23 @@ def health():
 
 
 @app.get("/ready")
+@app.get("/health/ready")
 def ready():
+    from app.services.redis_service import redis_health_check
+    redis_info = redis_health_check()
+    
     try:
         with engine.connect():
             pass
-        return {"status": "ready", "database": "ok"}
+        db_status = "ok"
     except Exception:
-        return JSONResponse(status_code=503, content={"status": "not_ready", "database": "unavailable"})
+        return JSONResponse(status_code=503, content={"status": "not_ready", "database": "unavailable", "redis": redis_info["status"]})
+
+    return {"status": "ready", "database": db_status, "redis": redis_info["status"]}
 
 
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(conversations.router)
 app.include_router(messages.router)
 app.include_router(documents.router)

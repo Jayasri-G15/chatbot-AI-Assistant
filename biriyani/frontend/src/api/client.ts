@@ -20,39 +20,50 @@ async function handle<T>(res: Response): Promise<T> {
   return res.json()
 }
 
+function getAuthHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = localStorage.getItem('crm_auth_token')
+  const headers: Record<string, string> = { ...extra }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  return headers
+}
+
 export const api = {
-  listConversations: () => fetch(`${BASE}/conversations`).then((r) => handle<Conversation[]>(r)),
+  listConversations: () =>
+    fetch(`${BASE}/conversations`, { headers: getAuthHeaders() }).then((r) => handle<Conversation[]>(r)),
 
   createConversation: () =>
-    fetch(`${BASE}/conversations`, { method: 'POST' }).then((r) => handle<Conversation>(r)),
+    fetch(`${BASE}/conversations`, { method: 'POST', headers: getAuthHeaders() }).then((r) => handle<Conversation>(r)),
 
   renameConversation: (id: string, title: string) =>
     fetch(`${BASE}/conversations/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ title }),
     }).then((r) => handle<Conversation>(r)),
 
   deleteConversation: (id: string) =>
-    fetch(`${BASE}/conversations/${id}`, { method: 'DELETE' }).then((r) => handle<void>(r)),
+    fetch(`${BASE}/conversations/${id}`, { method: 'DELETE', headers: getAuthHeaders() }).then((r) => handle<void>(r)),
 
   listMessages: (conversationId: string) =>
-    fetch(`${BASE}/conversations/${conversationId}/messages`).then((r) => handle<Message[]>(r)),
+    fetch(`${BASE}/conversations/${conversationId}/messages`, { headers: getAuthHeaders() }).then((r) => handle<Message[]>(r)),
 
   listDocuments: (conversationId: string) =>
-    fetch(`${BASE}/conversations/${conversationId}/documents`).then((r) => handle<DocumentInfo[]>(r)),
+    fetch(`${BASE}/conversations/${conversationId}/documents`, { headers: getAuthHeaders() }).then((r) => handle<DocumentInfo[]>(r)),
 
   uploadDocument: (conversationId: string, file: File) => {
     const formData = new FormData()
     formData.append('file', file)
     return fetch(`${BASE}/conversations/${conversationId}/documents`, {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: formData,
     }).then((r) => handle<DocumentInfo>(r))
   },
 
   deleteDocument: (conversationId: string, documentId: string) =>
-    fetch(`${BASE}/conversations/${conversationId}/documents/${documentId}`, { method: 'DELETE' }).then((r) =>
+    fetch(`${BASE}/conversations/${conversationId}/documents/${documentId}`, { method: 'DELETE', headers: getAuthHeaders() }).then((r) =>
       handle<void>(r),
     ),
 }
@@ -72,7 +83,7 @@ export async function* streamMessage(
 > {
   const res = await fetch(`${BASE}/conversations/${conversationId}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ content, document_ids: documentIds ?? [] }),
     signal,
   })
