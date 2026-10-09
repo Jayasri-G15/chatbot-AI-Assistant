@@ -1,4 +1,9 @@
+import os
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DEFAULT_DB_PATH = BASE_DIR / "chat.db"
 
 
 class Settings(BaseSettings):
@@ -19,7 +24,7 @@ class Settings(BaseSettings):
     chunk_size: int = 500
     chunk_overlap: int = 100
 
-    database_url: str = "sqlite:///./chat.db"
+    database_url: str = f"sqlite:///{DEFAULT_DB_PATH}"
     redis_url: str = "redis://localhost:6379/0"
     redis_enabled: bool = True
     cors_origins: str = "http://localhost:5173"

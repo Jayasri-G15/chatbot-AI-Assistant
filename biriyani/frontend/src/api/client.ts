@@ -10,14 +10,25 @@ class ApiError extends Error {
   }
 }
 
+async function parseJsonResponse(res: Response) {
+  try {
+    const text = await res.text()
+    if (!text || !text.trim()) return null
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
 async function handle<T>(res: Response): Promise<T> {
+  const body = await parseJsonResponse(res)
   if (!res.ok) {
-    const body = await res.json().catch(() => null)
     const err = body?.error
-    throw new ApiError(err?.code ?? 'UNKNOWN_ERROR', err?.message ?? 'Something went wrong.')
+    const message = err?.message ?? (typeof body?.detail === 'string' ? body.detail : body?.detail?.error?.message ?? 'Something went wrong.')
+    throw new ApiError(err?.code ?? 'UNKNOWN_ERROR', message)
   }
   if (res.status === 204) return undefined as T
-  return res.json()
+  return body as T
 }
 
 function getAuthHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -90,7 +101,7 @@ export async function* streamMessage(
 
 
   if (!res.ok || !res.body) {
-    const body = await res.json().catch(() => null)
+    const body = await parseJsonResponse(res)
     throw new ApiError(body?.error?.code ?? 'UNKNOWN_ERROR', body?.error?.message ?? 'Something went wrong.')
   }
 

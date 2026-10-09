@@ -46,7 +46,7 @@ export function CRMAssistantView() {
         throw new Error(`Query failed with status ${res.status}`)
       }
 
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (json.success && json.data) {
         setData(json.data)
       } else {

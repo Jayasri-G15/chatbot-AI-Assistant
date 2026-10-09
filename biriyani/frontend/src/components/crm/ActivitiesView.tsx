@@ -15,7 +15,7 @@ export function ActivitiesView() {
         const res = await fetch(`/api/v1/admin/activities?${params.toString()}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (json.success || json.data) {
           const d = json.data || json
           setActivities(d.items || d.activities || [])

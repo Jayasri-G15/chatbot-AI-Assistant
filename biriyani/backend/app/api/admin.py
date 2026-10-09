@@ -94,6 +94,7 @@ def get_admin_activities(
 
 
 @router.post("/assistant/query")
+@router.post("/query")
 def admin_ai_crm_query(
     payload: CRMAssistantQueryRequest,
     db: Session = Depends(get_db),

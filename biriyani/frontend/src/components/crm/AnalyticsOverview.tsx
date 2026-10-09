@@ -13,11 +13,10 @@ export function AnalyticsOverview() {
         const res = await fetch('/api/v1/admin/analytics', {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
+        const json = await res.json().catch(() => ({}))
         if (!res.ok) {
-          const errJson = await res.json().catch(() => ({}))
-          throw new Error(errJson.detail?.error?.message || errJson.detail || 'Failed to load analytics')
+          throw new Error(json.detail?.error?.message || (typeof json.detail === 'string' ? json.detail : null) || json.error?.message || 'Failed to load analytics')
         }
-        const json = await res.json()
         setData(json.data || json)
       } catch (err: any) {
         setError(err.message)

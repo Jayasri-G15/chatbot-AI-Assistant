@@ -12,7 +12,7 @@ export function LeadsView() {
         setIsLoading(true)
         const q = statusFilter ? `?status=${statusFilter}` : ''
         const res = await fetch(`/api/v1/leads${q}`)
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (json.success) {
           setLeads(json.data.items)
           setTotal(json.data.total)

@@ -16,7 +16,7 @@ export function PaymentsView() {
         const res = await fetch(`/api/v1/admin/payments?${params.toString()}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (json.success || json.data) {
           const d = json.data || json
           setPayments(d.items || d.payments || [])

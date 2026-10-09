@@ -19,6 +19,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+async function parseJsonResponse(res: Response) {
+  try {
+    const text = await res.text()
+    if (!text || !text.trim()) return null
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => {
     const t = localStorage.getItem('crm_auth_token')
@@ -47,9 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           headers: { Authorization: `Bearer ${token}` },
         })
         if (res.ok) {
-          const data = await res.json()
-          setUser(data)
-          localStorage.setItem('crm_auth_user', JSON.stringify(data))
+          const data = await parseJsonResponse(res)
+          if (data) {
+            setUser(data)
+            localStorage.setItem('crm_auth_user', JSON.stringify(data))
+          } else {
+            setToken(null)
+            setUser(null)
+            localStorage.removeItem('crm_auth_token')
+            localStorage.removeItem('crm_auth_user')
+          }
         } else {
           setToken(null)
           setUser(null)
@@ -68,15 +85,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token])
 
   const login = async (email: string, pass: string) => {
-    const res = await fetch('/api/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pass }),
-    })
-    const json = await res.json()
-    if (!res.ok) {
-      throw new Error(json.detail?.error?.message || json.detail || 'Invalid email or password.')
+    let res: Response
+    try {
+      res = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pass }),
+      })
+    } catch {
+      throw new Error('Network error: Unable to connect to backend server. Please ensure backend server is running.')
     }
+
+    const json = await parseJsonResponse(res)
+    if (!res.ok) {
+      const errMsg =
+        json?.detail?.error?.message ||
+        (typeof json?.detail === 'string' ? json.detail : null) ||
+        json?.error?.message ||
+        (res.status === 504 || res.status === 502 || res.status === 503
+          ? 'Backend server is unreachable (504/502). Please ensure FastAPI is running on port 8000.'
+          : 'Invalid email or password.')
+      throw new Error(errMsg)
+    }
+
+    if (!json || !json.access_token) {
+      throw new Error('Invalid server response format.')
+    }
+
     setToken(json.access_token)
     setUser(json.user)
     localStorage.setItem('crm_auth_token', json.access_token)
@@ -84,15 +119,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signup = async (name: string, email: string, pass: string, phone?: string) => {
-    const res = await fetch('/api/v1/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password: pass, phone }),
-    })
-    const json = await res.json()
-    if (!res.ok) {
-      throw new Error(json.detail?.error?.message || json.detail || 'Signup failed.')
+    let res: Response
+    try {
+      res = await fetch('/api/v1/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password: pass, phone }),
+      })
+    } catch {
+      throw new Error('Network error: Unable to connect to backend server. Please ensure backend server is running.')
     }
+
+    const json = await parseJsonResponse(res)
+    if (!res.ok) {
+      const errMsg =
+        json?.detail?.error?.message ||
+        (typeof json?.detail === 'string' ? json.detail : null) ||
+        json?.error?.message ||
+        (res.status === 504 || res.status === 502 || res.status === 503
+          ? 'Backend server is unreachable (504/502). Please ensure FastAPI is running on port 8000.'
+          : 'Signup failed. Please try again.')
+      throw new Error(errMsg)
+    }
+
+    if (!json || !json.access_token) {
+      throw new Error('Invalid server response format.')
+    }
+
     setToken(json.access_token)
     setUser(json.user)
     localStorage.setItem('crm_auth_token', json.access_token)

@@ -42,7 +42,7 @@ export function CustomerList() {
         const res = await fetch(`/api/v1/admin/users?${params.toString()}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (json.success || json.items) {
           setUsers(json.items || json.data?.items || [])
           setTotal(json.total || json.data?.total || 0)

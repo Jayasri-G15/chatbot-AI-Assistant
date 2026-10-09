@@ -18,7 +18,7 @@ export function CustomerDetailModal({ userId, onClose }: Props) {
         const res = await fetch(`/api/v1/admin/users/${userId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (json.success || json.data) {
           setData(json.data || json)
         }

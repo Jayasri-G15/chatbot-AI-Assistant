@@ -13,14 +13,14 @@ export function DealsView() {
         setIsLoading(true)
         const q = statusFilter ? `?status=${statusFilter}` : ''
         const res = await fetch(`/api/v1/deals${q}`)
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (json.success) {
           setDeals(json.data.items)
           setTotal(json.data.total)
         }
 
         const sumRes = await fetch('/api/v1/deals/summary')
-        const sumJson = await sumRes.json()
+        const sumJson = await sumRes.json().catch(() => ({}))
         if (sumJson.success) {
           setSummary(sumJson.data)
         }
